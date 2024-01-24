@@ -1,0 +1,127 @@
+version: '3'
+
+services:
+  jupyter:
+    image: jupyter/pyspark-notebook:latest
+    environment:
+      JUPYTER_ENABLE_LAB: "yes"
+      JUPYTER_TOKEN: jupyter
+    ports:
+      - 8888:8888
+    volumes:
+      - ./data/jupyter:/home/jovyan/work
+
+  postgres:
+    container_name: postgres
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      PGDATA: /data/postgres
+      POSTGRES_DB: airflow
+    ports:
+      - 5432:5432
+    volumes:
+      - ./data/postgres/postgres:/data/postgres
+
+  airflow-init:
+    container_name: airflow-init
+    image: apache/airflow:2.0.0
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:password@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: FB0o_zt4e3Ziq3LdUUO7F2Z95cvFFx16hU8jTeR1ASM=
+      AIRFLOW__CORE__LOAD_EXAMPLES: False
+      AIRFLOW__CORE__LOGGING_LEVEL: INFO
+    volumes:
+      - ./data/airflow/dags:/opt/airflow/dags
+      - ./data/airflow/logs:/opt/airflow/logs
+      - ./data/airflow/plugins:/opt/airflow/plugins
+      - ./data/airflow/airflow.cfg:/opt/airlfow/airflow.cfg
+    depends_on:
+      - postgres
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - airflow users list || ( airflow db init &&
+        airflow users create
+          --role Admin
+          --username airflow
+          --password airflow
+          --email airflow@airflow.com
+          --firstname airflow
+          --lastname airflow )
+    restart: on-failure
+
+  airflow-webserver:
+    container_name: airflow-webserver
+    image: apache/airflow:2.0.0
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:password@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: FB0o_zt4e3Ziq3LdUUO7F2Z95cvFFx16hU8jTeR1ASM=
+      AIRFLOW__CORE__LOAD_EXAMPLES: False
+      AIRFLOW__CORE__LOGGING_LEVEL: INFO
+    volumes:
+      - ./data/airflow/dags:/opt/airflow/dags
+      - ./data/airflow/logs:/opt/airflow/logs
+      - ./data/airflow/plugins:/opt/airflow/plugins
+      - ./data/airflow/airflow.cfg:/opt/airlfow/airflow.cfg
+    command: airflow webserver
+    ports:
+      - 8080:8080
+    depends_on:
+      - postgres
+    restart: always
+
+  airflow-scheduler:
+    container_name: airflow-scheduler
+    image: apache/airflow:2.0.0
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:password@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: FB0o_zt4e3Ziq3LdUUO7F2Z95cvFFx16hU8jTeR1ASM=
+      AIRFLOW__CORE__LOAD_EXAMPLES: False
+      AIRFLOW__CORE__LOGGING_LEVEL: INFO
+    volumes:
+      - ./data/airflow/dags:/opt/airflow/dags
+      - ./data/airflow/logs:/opt/airflow/logs
+      - ./data/airflow/plugins:/opt/airflow/plugins
+      - ./data/airflow/airflow.cfg:/opt/airlfow/airflow.cfg
+    depends_on:
+      - postgres
+    command: airflow scheduler
+    restart: always
+
+  zookeeper:
+    container_name: zookeeper
+    image: confluentinc/cp-zookeeper:7.0.1
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports: 
+      - 2181:2181
+    restart: unless-stopped
+
+  kafka:
+    container_name: kafka
+    image: confluentinc/cp-kafka:7.0.1
+    depends_on:
+      - zookeeper
+    ports: 
+      - 29092:29092
+      - 9092:9092
+      - 9101:9101
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    restart: unless-stopped
+    networks:
+      - default
